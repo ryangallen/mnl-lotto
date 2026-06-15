@@ -1,6 +1,12 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from 'react';
 
 import {
   Box,
@@ -19,17 +25,12 @@ import { keyframes } from '@mui/material/styles';
 import find from 'lodash/find';
 import get from 'lodash/get';
 
-type Ball = {
-  color: string;
-};
+import { useLoopingFan } from './useLoopingFan';
+import { playOneShot } from './playOneShot';
+import { useJugPhysics } from './useJugPhysics';
+import type { Ball, Team } from './types';
 
-type Team = {
-  name: string;
-  color: string;
-  balls: Ball[];
-};
-
-type MachineState = 'idle' | 'running' | 'finished';
+type MachineState = 'idle' | 'running' | 'paused' | 'finished';
 
 const stringToColor = (str: string) => {
   let hash = 0;
@@ -44,8 +45,11 @@ const stringToColor = (str: string) => {
   return color;
 };
 
+let ballIdCounter = 0;
+const nextBallId = () => `b${++ballIdCounter}`;
+
 const createNBalls = (n: number, color: string) =>
-  [...Array(n)].map(() => ({ color }));
+  [...Array(n)].map(() => ({ id: nextBallId(), color }));
 
 const DEFAULT_BALL_COUNT = 2;
 const PULL_DISPLAY_MS = 1500;
@@ -56,13 +60,13 @@ const fadeInBall = keyframes`
   to { opacity: 1; }
 `;
 const DEFAULT_TEAMS = [
+  { name: 'Golden Seals', color: '#FFE680' },
+  { name: 'Nordiques', color: '#5BA8FF' },
+  { name: 'North Stars', color: '#3FE6A0' },
   { name: 'Whalers', color: '#7D8385' },
-  { name: 'North Stars', color: '#00834B' },
-  { name: 'Tigers', color: '#FFAE2F' },
-  { name: 'Golden Seals', color: '#07A7B5' },
-  { name: 'Nordiques', color: '#043787' },
   { name: 'Americans', color: '#FFF' },
-  { name: 'Scouts', color: '#C90011' },
+  { name: 'Tigers', color: '#B84CFF' },
+  { name: 'Scouts', color: '#FF5B6E' },
 ].map((team) => ({
   ...team,
   balls: createNBalls(DEFAULT_BALL_COUNT, team.color),
@@ -78,7 +82,7 @@ const teamsFromString = (str: string, ballCount: number) =>
 
       const predefinedTeam = find(
         DEFAULT_TEAMS,
-        (team: Team) => team.name === name
+        (team: Team) => team.name === name,
       );
       const color = predefinedTeam?.color || stringToColor(name);
 
@@ -105,6 +109,11 @@ export default function Home() {
   const clearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useLoopingFan({
+    src: '/static/fan-running.mp3',
+    active: machineState === 'running',
+  });
+
   const clearDisplayedBall = useCallback(() => {
     if (fadeTimeoutRef.current) {
       clearTimeout(fadeTimeoutRef.current);
@@ -129,12 +138,12 @@ export default function Home() {
       if (clearTimeoutRef.current) clearTimeout(clearTimeoutRef.current);
       if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
     },
-    []
+    [],
   );
 
   const totalBalls = useMemo(
     () => teams.reduce((sum, t) => sum + t.balls.length, 0),
-    [teams]
+    [teams],
   );
 
   const draftOrder = useMemo<(Team | null)[]>(() => {
@@ -148,7 +157,11 @@ export default function Home() {
       const next = (pulledByColor.get(ball.color) ?? 0) + 1;
       pulledByColor.set(ball.color, next);
       const team = find(teams, (t: Team) => t.color === ball.color);
-      if (team && next === team.balls.length && !find(eliminationOrder, (t) => t.color === team.color)) {
+      if (
+        team &&
+        next === team.balls.length &&
+        !find(eliminationOrder, (t) => t.color === team.color)
+      ) {
         eliminationOrder.push(team);
       }
     }
@@ -159,7 +172,7 @@ export default function Home() {
     });
 
     const unassigned = teams.filter(
-      (t) => !find(eliminationOrder, (e) => e.color === t.color)
+      (t) => !find(eliminationOrder, (e) => e.color === t.color),
     );
     if (unassigned.length === 1) {
       const firstEmpty = slots.findIndex((s) => s === null);
@@ -176,7 +189,7 @@ export default function Home() {
         prev.map((team) => ({
           ...team,
           balls: createNBalls(value, team.color),
-        }))
+        })),
       );
       if (machineState !== 'idle') {
         setMachineState('idle');
@@ -185,7 +198,7 @@ export default function Home() {
         clearDisplayedBall();
       }
     },
-    [machineState, clearDisplayedBall]
+    [machineState, clearDisplayedBall],
   );
 
   const handleTeamsChange = useCallback(
@@ -198,10 +211,11 @@ export default function Home() {
         clearDisplayedBall();
       }
     },
-    [machineState, ballCount, clearDisplayedBall]
+    [machineState, ballCount, clearDisplayedBall],
   );
 
   const handleStart = useCallback(() => {
+    playOneShot('/static/button-press.mp3');
     const allBalls = teams.flatMap((t) => t.balls);
     const shuffled = [...allBalls].sort(() => Math.random() - 0.5);
     setJugBalls(shuffled);
@@ -212,6 +226,7 @@ export default function Home() {
 
   const handlePullBall = useCallback(() => {
     if (jugBalls.length === 0 || pullLocked) return;
+    playOneShot('/static/pop.mp3');
     const idx = Math.floor(Math.random() * jugBalls.length);
     const pulled = jugBalls[idx];
     const remaining = [...jugBalls.slice(0, idx), ...jugBalls.slice(idx + 1)];
@@ -254,11 +269,38 @@ export default function Home() {
     clearDisplayedBall();
   }, [clearDisplayedBall]);
 
-  const canStart = machineState === 'idle' && totalBalls > 0;
-  const canPull = machineState === 'running' && jugBalls.length > 0 && !pullLocked;
+  const canPull =
+    machineState === 'running' && jugBalls.length > 0 && !pullLocked;
   const canReset = machineState !== 'idle' || pulledBalls.length > 0;
+  const canTogglePower =
+    (machineState === 'idle' && totalBalls > 0) ||
+    machineState === 'running' ||
+    machineState === 'paused';
 
-  const BALL_SIZE = 24;
+  const handleTogglePower = useCallback(() => {
+    if (machineState === 'idle') {
+      handleStart();
+    } else if (machineState === 'running') {
+      playOneShot('/static/button-press.mp3');
+      setMachineState('paused');
+    } else if (machineState === 'paused') {
+      playOneShot('/static/button-press.mp3');
+      setMachineState('running');
+    }
+  }, [machineState, handleStart]);
+
+  const BALL_SIZE = 30;
+  const JUG_WIDTH = 300;
+  const JUG_HEIGHT = 500;
+
+  const { registerBall } = useJugPhysics({
+    balls: jugBalls,
+    active: machineState !== 'idle',
+    gustsEnabled: machineState === 'running',
+    width: JUG_WIDTH,
+    height: JUG_HEIGHT,
+    ballSize: BALL_SIZE,
+  });
 
   return (
     <Box
@@ -272,6 +314,8 @@ export default function Home() {
       <Typography
         variant='h1'
         fontSize='2em'
+        fontWeight='bold'
+        fontStyle='italic'
         textAlign='center'
         marginBottom={2}
       >
@@ -314,14 +358,10 @@ export default function Home() {
         gap={6}
         flexWrap='wrap'
       >
-        <Box
-          width={280}
-          flexShrink={0}
-          paddingTop={1}
-          sx={{
-            visibility: machineState === 'idle' ? 'visible' : 'hidden',
-          }}
-        >
+        <Box width={200} flexShrink={0} paddingTop={1}>
+          <Typography variant='h6' fontWeight='bold' marginBottom={1}>
+            Teams
+          </Typography>
           <Box
             component='ul'
             display='flex'
@@ -332,19 +372,37 @@ export default function Home() {
             sx={{ listStyle: 'none' }}
           >
             {teams.map(({ name, color, balls }) => (
-              <Box component='li' key={name} display='flex' alignItems='center' gap={1}>
-                <Typography>{name}</Typography>
-                {balls.map(({ color }, i) => (
+              <Box
+                component='li'
+                key={name}
+                display='flex'
+                alignItems='center'
+                gap={1}
+              >
+                {machineState === 'idle' ? (
+                  <Box display='flex' alignItems='center' gap={0.5}>
+                    {balls.map(({ color }, i) => (
+                      <Box
+                        key={`${color}-${i}`}
+                        borderRadius='100%'
+                        bgcolor={color}
+                        width={BALL_SIZE}
+                        height={BALL_SIZE}
+                        border='1px solid rgba(0, 0, 0, .2)'
+                        boxShadow='0 0 2px rgba(0, 0, 0, .4)'
+                      />
+                    ))}
+                  </Box>
+                ) : (
                   <Box
-                    key={`${color}-${i}`}
-                    borderRadius='100%'
                     bgcolor={color}
-                    width={20}
-                    height={20}
-                    border='1px solid rgba(0, 0, 0, .2)'
-                    boxShadow='0 0 2px rgba(0, 0, 0, .4)'
+                    width={BALL_SIZE}
+                    height={BALL_SIZE}
+                    borderRadius={0.5}
+                    border='1px solid rgba(0, 0, 0, .25)'
                   />
-                ))}
+                )}
+                <Typography>{name}</Typography>
               </Box>
             ))}
           </Box>
@@ -356,194 +414,281 @@ export default function Home() {
           alignItems='center'
           gap={2}
           marginRight={24}
+          marginTop={5}
         >
-        <Box display='flex' flexDirection='column' alignItems='center'>
-        <Box
-          position='relative'
-          bgcolor='#def'
-          width={300}
-          height={500}
-          border='1px solid rgba(0, 0, 0, .2)'
-          boxShadow='-1px 1px 8px rgba(0, 0, 0, .2)'
-          borderRadius={12}
-          display='flex'
-          flexDirection='row'
-          flexWrap='wrap'
-          gap={1}
-          padding={2}
-          alignContent='flex-end'
-        >
-          {machineState !== 'idle' &&
-            jugBalls.map((ball, i) => (
-              <Box
-                key={i}
-                borderRadius='100%'
-                bgcolor={ball.color}
-                width={BALL_SIZE}
-                height={BALL_SIZE}
-                border='1px solid rgba(0, 0, 0, .2)'
-                boxShadow='0 0 2px rgba(0, 0, 0, .4)'
-                flexShrink={0}
-              />
-            ))}
-        </Box>
-
-        <Box position='relative' width={300} height={150}>
-          <Box
-            bgcolor='#ccc'
-            width={300}
-            height={150}
-            border='1px solid rgba(0, 0, 0, .2)'
-            boxShadow='-1px 1px 8px rgba(0, 0, 0, .2)'
-            borderRadius={1}
-            display='flex'
-            alignItems='center'
-            justifyContent='center'
-          >
-            {machineState === 'idle' && (
-              <Button
-                variant='contained'
-                color='success'
-                size='large'
-                disabled={!canStart}
-                onClick={handleStart}
-              >
-                Start
-              </Button>
-            )}
-          </Box>
-          <Box
-            position='absolute'
-            right={-52}
-            top='50%'
-            display='flex'
-            alignItems='center'
-            onClick={canPull ? handlePullBall : undefined}
-            role={canPull ? 'button' : undefined}
-            aria-label={canPull ? 'Pull ball' : undefined}
-            aria-disabled={!canPull}
-            tabIndex={canPull ? 0 : -1}
-            onKeyDown={(e) => {
-              if (canPull && (e.key === 'Enter' || e.key === ' ')) {
-                e.preventDefault();
-                handlePullBall();
-              }
-            }}
-            sx={{
-              transform: 'translateY(-50%)',
-              cursor: canPull ? 'pointer' : 'default',
-              opacity: machineState === 'running' ? 1 : 0.85,
-              transition: 'filter 120ms ease',
-              '&:hover': canPull
-                ? {
-                    filter: 'brightness(1.08)',
-                  }
-                : {},
-              '&:focus-visible': {
-                outline: '2px solid #1976d2',
-                outlineOffset: 2,
-              },
-            }}
-          >
+          <Box display='flex' flexDirection='column' alignItems='center'>
             <Box
-              width={52}
-              height={BALL_SIZE + 8}
-              bgcolor='#fff'
-              border='1px solid rgba(0, 0, 0, .25)'
-              borderRadius='0 4px 4px 0'
-              boxShadow='-1px 1px 4px rgba(0, 0, 0, .2)'
-              display='flex'
-              alignItems='center'
-              justifyContent='center'
               position='relative'
+              bgcolor='#def'
+              width={JUG_WIDTH}
+              height={JUG_HEIGHT}
+              border='1px solid rgba(0, 0, 0, .2)'
+              boxShadow='-1px 1px 8px rgba(0, 0, 0, .2)'
+              borderRadius={12}
+              overflow='hidden'
             >
-              <Typography
-                fontSize='0.75em'
-                fontWeight={700}
+              {machineState !== 'idle' &&
+                jugBalls.map((ball) => (
+                  <Box
+                    key={ball.id}
+                    ref={registerBall(ball)}
+                    position='absolute'
+                    top={0}
+                    left={0}
+                    borderRadius='100%'
+                    bgcolor={ball.color}
+                    width={BALL_SIZE}
+                    height={BALL_SIZE}
+                    border='1px solid rgba(0, 0, 0, .2)'
+                    boxShadow='0 0 2px rgba(0, 0, 0, .4)'
+                    sx={{
+                      willChange: 'transform',
+                    }}
+                  />
+                ))}
+            </Box>
+
+            <Box position='relative' width={300} height={150}>
+              <Box
+                position='absolute'
+                top={10}
+                left={10}
+                display='flex'
+                alignItems='center'
+                gap={0.75}
+                onClick={canTogglePower ? handleTogglePower : undefined}
+                role={canTogglePower ? 'button' : undefined}
+                aria-label={canTogglePower ? 'Toggle machine power' : undefined}
+                aria-pressed={machineState === 'running'}
+                tabIndex={canTogglePower ? 0 : -1}
+                onKeyDown={(e) => {
+                  if (
+                    canTogglePower &&
+                    (e.key === 'Enter' || e.key === ' ')
+                  ) {
+                    e.preventDefault();
+                    handleTogglePower();
+                  }
+                }}
                 sx={{
-                  color: '#2e7d32',
-                  letterSpacing: '0.05em',
+                  cursor: canTogglePower ? 'pointer' : 'default',
+                  zIndex: 1,
                   userSelect: 'none',
-                  opacity: canPull ? 1 : 0.3,
+                  opacity: canTogglePower ? 1 : 0.45,
                   transition: 'opacity 200ms ease',
+                  '&:focus-visible': {
+                    outline: '2px solid #1976d2',
+                    outlineOffset: 2,
+                  },
                 }}
               >
-                PULL
+                <Box
+                  width={22}
+                  height={12}
+                  borderRadius={0.5}
+                  sx={{
+                    bgcolor:
+                      machineState === 'running' ? '#ff3b3b' : '#5a1a1a',
+                    border: '1px solid rgba(0, 0, 0, .5)',
+                    boxShadow:
+                      machineState === 'running'
+                        ? '0 0 6px 1px rgba(255, 59, 59, .85), inset 0 -1px 2px rgba(0, 0, 0, .3)'
+                        : 'inset 0 1px 2px rgba(0, 0, 0, .5)',
+                    transition:
+                      'background-color 200ms ease, box-shadow 200ms ease',
+                  }}
+                />
+                <Typography
+                  fontSize='0.7rem'
+                  fontWeight={700}
+                  sx={{
+                    color: '#333',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  ON/OFF
+                </Typography>
+              </Box>
+              <Box
+                bgcolor='#ccc'
+                width={300}
+                height={150}
+                border='1px solid rgba(0, 0, 0, .2)'
+                boxShadow='-1px 1px 8px rgba(0, 0, 0, .2)'
+                borderRadius={1}
+                display='flex'
+                alignItems='center'
+                justifyContent='center'
+              >
+              </Box>
+              <Typography
+                position='absolute'
+                bottom={6}
+                left={10}
+                fontSize='0.7rem'
+                fontStyle='italic'
+                sx={{
+                  color: 'rgba(0, 0, 0, .45)',
+                  letterSpacing: '0.02em',
+                  userSelect: 'none',
+                  pointerEvents: 'none',
+                }}
+              >
+                Skillmanator 3000
               </Typography>
               <Box
                 position='absolute'
-                right={-4}
+                right={-50}
                 top='50%'
-                width={10}
-                height={BALL_SIZE + 4}
-                borderRadius='50%'
-                bgcolor='#444'
-                border='1px solid rgba(0, 0, 0, .4)'
-                boxShadow='inset 0 2px 4px rgba(0, 0, 0, .5)'
-                sx={{ transform: 'translateY(-50%)' }}
-              />
-              {displayedBall && (
+                display='flex'
+                alignItems='center'
+                onClick={canPull ? handlePullBall : undefined}
+                role={canPull ? 'button' : undefined}
+                aria-label={canPull ? 'Pull ball' : undefined}
+                aria-disabled={!canPull}
+                tabIndex={canPull ? 0 : -1}
+                onKeyDown={(e) => {
+                  if (canPull && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    handlePullBall();
+                  }
+                }}
+                sx={{
+                  transform: 'translateY(-50%)',
+                  cursor: canPull ? 'pointer' : 'default',
+                  transition: 'filter 120ms ease',
+                  '&:hover': canPull
+                    ? {
+                        filter: 'brightness(1.08)',
+                      }
+                    : {},
+                  '&:focus-visible': {
+                    outline: '2px solid #1976d2',
+                    outlineOffset: 2,
+                  },
+                }}
+              >
                 <Box
-                  position='absolute'
-                  top='50%'
-                  width={BALL_SIZE + 4}
-                  height={BALL_SIZE + 4}
+                  width={64}
+                  height={BALL_SIZE + 8}
+                  bgcolor='#fff'
+                  borderRadius='0 4px 4px 0'
+                  display='flex'
+                  alignItems='center'
+                  justifyContent='center'
+                  position='relative'
                   sx={{
-                    right: -(BALL_SIZE + 4) - 80,
-                    transform: `translateY(-${(BALL_SIZE + 4) / 2}px)`,
-                    opacity: displayedBallVisible ? 1 : 0,
-                    transition: 'opacity 600ms ease',
-                    pointerEvents: 'none',
+                    borderTop: '1px solid #bfbfbf',
+                    borderRight: '1px solid #bfbfbf',
+                    borderBottom: '1px solid #bfbfbf',
+                    borderLeft: 'none',
                   }}
                 >
+                  <Typography
+                    fontSize='0.75em'
+                    fontWeight={700}
+                    sx={{
+                      color: '#2e7d32',
+                      letterSpacing: '0.05em',
+                      userSelect: 'none',
+                      opacity: canPull ? 1 : 0.3,
+                      transition: 'opacity 200ms ease',
+                    }}
+                  >
+                    PULL
+                  </Typography>
                   <Box
-                    width={BALL_SIZE + 4}
-                    height={BALL_SIZE + 4}
-                    borderRadius='100%'
-                    bgcolor={displayedBall.color}
-                    border='1px solid rgba(0, 0, 0, .25)'
-                    boxShadow='0 2px 6px rgba(0, 0, 0, .3)'
+                    position='absolute'
+                    left={-6}
+                    top={-1}
+                    width={10}
+                    height={BALL_SIZE + 8}
+                    borderRadius='50%'
+                    bgcolor='#fff'
+                    sx={{
+                      zIndex: -1,
+                      borderTop: '1px solid #bfbfbf',
+                      borderLeft: '1px solid #bfbfbf',
+                      borderBottom: '1px solid #bfbfbf',
+                      borderRight: 'none',
+                    }}
                   />
-                  {(() => {
-                    const team = find(
-                      teams,
-                      (t: Team) => t.color === displayedBall.color
-                    );
-                    const teamName = get(team, 'name', displayedBall.color);
-                    return (
-                      <Typography
-                        fontWeight={500}
-                        fontSize='0.85em'
-                        whiteSpace='nowrap'
-                        textAlign='center'
-                        sx={{
-                          textTransform: 'uppercase',
-                          position: 'absolute',
-                          top: '100%',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          marginTop: '4px',
-                        }}
-                      >
-                        {teamName}!!
-                      </Typography>
-                    );
-                  })()}
+                  <Box
+                    position='absolute'
+                    right={-4}
+                    top='50%'
+                    width={10}
+                    height={BALL_SIZE + 6}
+                    borderRadius='50%'
+                    bgcolor='#444'
+                    border='1px solid rgba(0, 0, 0, .4)'
+                    boxShadow='inset 0 2px 4px rgba(0, 0, 0, .5)'
+                    sx={{ transform: 'translateY(-50%)' }}
+                  />
+                  {displayedBall && (
+                    <Box
+                      position='absolute'
+                      top='50%'
+                      width={BALL_SIZE + 4}
+                      height={BALL_SIZE + 4}
+                      sx={{
+                        right: -(BALL_SIZE + 4) - 80,
+                        transform: `translateY(-${(BALL_SIZE + 4) / 2}px)`,
+                        opacity: displayedBallVisible ? 1 : 0,
+                        transition: 'opacity 600ms ease',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <Box
+                        width={BALL_SIZE + 4}
+                        height={BALL_SIZE + 4}
+                        borderRadius='100%'
+                        bgcolor={displayedBall.color}
+                        border='1px solid rgba(0, 0, 0, .25)'
+                        boxShadow='0 2px 6px rgba(0, 0, 0, .3)'
+                      />
+                      {(() => {
+                        const team = find(
+                          teams,
+                          (t: Team) => t.color === displayedBall.color,
+                        );
+                        const teamName = get(team, 'name', displayedBall.color);
+                        return (
+                          <Typography
+                            fontWeight={500}
+                            fontSize='1.15em'
+                            whiteSpace='nowrap'
+                            textAlign='center'
+                            sx={{
+                              textTransform: 'uppercase',
+                              position: 'absolute',
+                              top: '100%',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              marginTop: '12px',
+                            }}
+                          >
+                            {teamName}!!
+                          </Typography>
+                        );
+                      })()}
+                    </Box>
+                  )}
                 </Box>
-              )}
+              </Box>
             </Box>
           </Box>
-        </Box>
-        </Box>
 
-        <Button
-          variant='outlined'
-          color='warning'
-          disabled={!canReset}
-          onClick={handleResetRequest}
-        >
-          Reset
-        </Button>
+          <Button
+            variant='text'
+            color='warning'
+            size='small'
+            disabled={!canReset}
+            onClick={handleResetRequest}
+            sx={{ fontSize: '0.75rem', minWidth: 0 }}
+          >
+            Reset
+          </Button>
         </Box>
 
         <Box
@@ -565,12 +710,7 @@ export default function Home() {
                 : undefined;
               const teamName = ball ? get(team, 'name', ball.color) : '';
               return (
-                <Box
-                  key={i}
-                  display='flex'
-                  alignItems='center'
-                  gap={2}
-                >
+                <Box key={i} display='flex' alignItems='center' gap={2}>
                   <Typography
                     width={28}
                     textAlign='right'
@@ -666,7 +806,11 @@ export default function Home() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleResetCancel}>Cancel</Button>
-          <Button onClick={handleResetConfirm} variant='contained' color='error'>
+          <Button
+            onClick={handleResetConfirm}
+            variant='contained'
+            color='error'
+          >
             Confirm
           </Button>
         </DialogActions>
