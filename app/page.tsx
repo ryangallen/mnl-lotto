@@ -342,6 +342,43 @@ export default function Home() {
     loaded,
   ]);
 
+  const receiptDownloadedRef = useRef(false);
+
+  // when the lottery completes, automatically download a JSON receipt
+  useEffect(() => {
+    if (machineState !== 'finished') return;
+    if (receiptDownloadedRef.current) return;
+    try {
+      const payload = {
+        id: lottoId ?? makeLottoId(draftTitle),
+        draftTitle,
+        ballCount,
+        teams,
+        jugBalls,
+        pulledBalls,
+        machineState,
+        loaded,
+        draftOrder: draftOrder.map((t) => (t ? t.name : null)),
+        savedAt: new Date().toISOString(),
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const filename = `${payload.id || 'lottery'}-receipt.json`;
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      receiptDownloadedRef.current = true;
+    } catch {
+      // ignore download errors
+    }
+  }, [machineState, lottoId, draftTitle, ballCount, teams, jugBalls, pulledBalls, loaded, draftOrder]);
+
   const handlePullBall = useCallback(() => {
     if (jugBalls.length === 0 || pullLocked) return;
     playOneShot('/static/pop.mp3');
