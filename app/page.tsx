@@ -377,7 +377,17 @@ export default function Home() {
     } catch {
       // ignore download errors
     }
-  }, [machineState, lottoId, draftTitle, ballCount, teams, jugBalls, pulledBalls, loaded, draftOrder]);
+  }, [
+    machineState,
+    lottoId,
+    draftTitle,
+    ballCount,
+    teams,
+    jugBalls,
+    pulledBalls,
+    loaded,
+    draftOrder,
+  ]);
 
   const handlePullBall = useCallback(() => {
     if (jugBalls.length === 0 || pullLocked) return;
