@@ -327,7 +327,8 @@ export default function Home() {
       localStorage.setItem(key, JSON.stringify(payload));
       const url = new URL(window.location.href);
       url.searchParams.set('lotto', lottoId);
-      window.history.replaceState({}, '', url.toString());
+      // push a new history entry so URL updates are navigable
+      window.history.pushState({}, '', url.toString());
     } catch {
       // ignore
     }
