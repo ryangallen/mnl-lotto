@@ -73,6 +73,11 @@ const DEFAULT_TEAMS = [
   balls: createNBalls(DEFAULT_BALL_COUNT, team.color),
 }));
 
+// Edit PRE_SLOTS to pre-assign slots
+const PRE_SLOTS: Record<number, string> = {
+  // 7: 'Golden Seals',
+};
+
 const teamsFromString = (str: string, ballCount: number) =>
   str
     .replace(/[^\w\s,]/gi, '')
@@ -102,6 +107,7 @@ export default function Home() {
   const [machineState, setMachineState] = useState<MachineState>('idle');
   const [loaded, setLoaded] = useState<boolean>(false);
   const [lottoId, setLottoId] = useState<string | null>(null);
+  const [preSlots, setPreSlots] = useState<Record<number, string>>(PRE_SLOTS);
   const [jugBalls, setJugBalls] = useState<Ball[]>([]);
   const [pulledBalls, setPulledBalls] = useState<Ball[]>([]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -117,6 +123,10 @@ export default function Home() {
     src: '/static/fan-running.mp3',
     active: machineState === 'running',
   });
+
+  const preAssignedNames = useMemo(() => {
+    return new Set(Object.values(preSlots || {}).filter(Boolean));
+  }, [preSlots]);
 
   const clearDisplayedBall = useCallback(() => {
     if (fadeTimeoutRef.current) {
@@ -153,10 +163,12 @@ export default function Home() {
     [],
   );
 
-  const totalBalls = useMemo(
-    () => teams.reduce((sum, t) => sum + t.balls.length, 0),
-    [teams],
-  );
+  const totalBalls = useMemo(() => {
+    const rawTotal = teams.reduce((sum, t) => sum + t.balls.length, 0);
+    const preCount = Object.keys(preSlots || {}).length;
+    const adjusted = rawTotal - preCount * ballCount;
+    return Math.max(0, adjusted);
+  }, [teams, preSlots, ballCount]);
 
   const formatTimestamp = () => {
     const d = new Date();
@@ -180,20 +192,42 @@ export default function Home() {
     try {
       const params = new URLSearchParams(window.location.search);
       const id = params.get('lotto');
-      if (!id) return;
+      if (!id) {
+        // no lotto param -> render base state (no balls loaded)
+        setMachineState('idle');
+        setLoaded(false);
+        setJugBalls([]);
+        setPulledBalls([]);
+        setLottoId(null);
+        return;
+      }
       const key = `mnl-lotto:${id}`;
       const raw = localStorage.getItem(key);
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!parsed) return;
-      // restore state
+      // restore state; keep machine paused except preserve 'finished' so results can be viewed
       setDraftTitle(parsed.draftTitle ?? 'Main Draft');
       setBallCount(parsed.ballCount ?? DEFAULT_BALL_COUNT);
+      if (parsed.preSlots) setPreSlots(parsed.preSlots);
       if (parsed.teams) setTeams(parsed.teams);
-      if (parsed.jugBalls) setJugBalls(parsed.jugBalls);
+      if (parsed.jugBalls) {
+        // remove any balls for pre-slotted teams so they are not in the machine
+        const preNames = new Set(Object.values(parsed.preSlots || {}));
+        const preColors = new Set<string>();
+        if (parsed.teams) {
+          for (const t of parsed.teams) {
+            if (preNames.has(t.name)) preColors.add(t.color);
+          }
+        }
+        setJugBalls(
+          (parsed.jugBalls || []).filter((b: Ball) => !preColors.has(b.color)),
+        );
+      }
       if (parsed.pulledBalls) setPulledBalls(parsed.pulledBalls);
-      // always load with the machine paused/off so user must turn it on
-      setMachineState('paused');
+      setMachineState(
+        parsed.machineState === 'finished' ? 'finished' : 'paused',
+      );
       setLoaded(parsed.loaded ?? true);
       setLottoId(id);
     } catch {
@@ -205,15 +239,31 @@ export default function Home() {
     const slots: (Team | null)[] = teams.map(() => null);
     if (teams.length === 0) return slots;
 
+    // Apply pre-slots first
+    const preAssigned = new Set<string>();
+    for (const [posStr, name] of Object.entries(preSlots || {})) {
+      const pos = Number(posStr);
+      const idx = pos - 1;
+      if (!Number.isNaN(idx) && idx >= 0 && idx < slots.length) {
+        const team = find(teams, (t: Team) => t.name === name);
+        if (team) {
+          slots[idx] = team;
+          preAssigned.add(team.color);
+        }
+      }
+    }
+
     const pulledByColor = new Map<string, number>();
     const eliminationOrder: Team[] = [];
 
     for (const ball of pulledBalls) {
+      const team = find(teams, (t: Team) => t.color === ball.color);
+      if (!team) continue;
+      // skip teams that were pre-assigned
+      if (preAssigned.has(team.color)) continue;
       const next = (pulledByColor.get(ball.color) ?? 0) + 1;
       pulledByColor.set(ball.color, next);
-      const team = find(teams, (t: Team) => t.color === ball.color);
       if (
-        team &&
         next === team.balls.length &&
         !find(eliminationOrder, (t) => t.color === team.color)
       ) {
@@ -222,12 +272,15 @@ export default function Home() {
     }
 
     eliminationOrder.forEach((team, i) => {
-      const slotIdx = teams.length - 1 - i;
+      // find next empty slot from the end that isn't pre-filled
+      let slotIdx = slots.length - 1 - i;
+      // if occupied, search backwards for next null
+      while (slotIdx >= 0 && slots[slotIdx] !== null) slotIdx--;
       if (slotIdx >= 0) slots[slotIdx] = team;
     });
 
     const unassigned = teams.filter(
-      (t) => !find(eliminationOrder, (e) => e.color === t.color),
+      (t) => !slots.find((s) => s?.color === t.color),
     );
     if (unassigned.length === 1) {
       const firstEmpty = slots.findIndex((s) => s === null);
@@ -273,19 +326,27 @@ export default function Home() {
 
   const handleStart = useCallback(() => {
     playOneShot('/static/button-press.mp3');
-    const allBalls = teams.flatMap((t) => t.balls);
+    // exclude pre-slotted teams' balls from the machine
+    const preNames = new Set(Object.values(preSlots || {}));
+    const allBalls = teams.flatMap((t) =>
+      preNames.has(t.name) ? [] : t.balls,
+    );
     const shuffled = [...allBalls].sort(() => Math.random() - 0.5);
     setJugBalls(shuffled);
     setPulledBalls([]);
     setMachineState('running');
     clearDisplayedBall();
-  }, [teams, clearDisplayedBall]);
+  }, [teams, clearDisplayedBall, preSlots]);
 
   const handleLoad = useCallback(() => {
     // Play a start sound then stagger many load-ball sounds to simulate balls loading
     playOneShot('/static/start.mp3');
 
-    const allBalls = teams.flatMap((t) => t.balls);
+    // exclude pre-slotted teams' balls from the machine
+    const preNames = new Set(Object.values(preSlots || {}));
+    const allBalls = teams.flatMap((t) =>
+      preNames.has(t.name) ? [] : t.balls,
+    );
     const shuffled = [...allBalls].sort(() => Math.random() - 0.5);
     setJugBalls(shuffled);
     setPulledBalls([]);
@@ -306,7 +367,7 @@ export default function Home() {
       }, delay);
       loadTimeoutsRef.current.push(id);
     }
-  }, [teams, clearDisplayedBall, totalBalls, draftTitle, ballCount]);
+  }, [teams, clearDisplayedBall, totalBalls, draftTitle, ballCount, preSlots]);
 
   // auto-save lottery state when lottoId exists and relevant state changes
   useEffect(() => {
@@ -576,6 +637,11 @@ export default function Home() {
                         height={BALL_SIZE}
                         border='1px solid rgba(0, 0, 0, .2)'
                         boxShadow='0 0 2px rgba(0, 0, 0, .4)'
+                        sx={{
+                          visibility: preAssignedNames.has(name)
+                            ? 'hidden'
+                            : 'visible',
+                        }}
                       />
                     ))}
                   </Box>
