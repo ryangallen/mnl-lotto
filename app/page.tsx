@@ -442,31 +442,43 @@ export default function Home() {
         MNL Draft Lottery
       </Typography>
 
-      <TextField
-        fullWidth
-        size='small'
-        label='Draft Title'
-        variant='outlined'
-        defaultValue={draftTitle}
-        onChange={(event) => setDraftTitle(event.target.value)}
-      />
-      <TextField
-        fullWidth
-        type='number'
-        size='small'
-        label='Balls per team'
-        variant='outlined'
-        defaultValue={ballCount}
-        onChange={(event) => handleBallCountChange(Number(event.target.value))}
-      />
-      <TextField
-        fullWidth
-        size='small'
-        label='Teams'
-        variant='outlined'
-        defaultValue={teams.map(({ name }) => name).join(', ')}
-        onChange={(event) => handleTeamsChange(event.target.value)}
-      />
+      <Box
+        display='flex'
+        flexDirection='row'
+        gap={2}
+        alignItems='center'
+        flexWrap='wrap'
+      >
+        <TextField
+          size='small'
+          label='Draft Title'
+          variant='outlined'
+          defaultValue={draftTitle}
+          onChange={(event) => setDraftTitle(event.target.value)}
+          sx={{ flex: '1 1 200px' }}
+        />
+
+        <TextField
+          type='number'
+          size='small'
+          label='Balls per team'
+          variant='outlined'
+          defaultValue={ballCount}
+          onChange={(event) =>
+            handleBallCountChange(Number(event.target.value))
+          }
+          sx={{ width: 120 }}
+        />
+
+        <TextField
+          size='small'
+          label='Teams'
+          variant='outlined'
+          defaultValue={teams.map(({ name }) => name).join(', ')}
+          onChange={(event) => handleTeamsChange(event.target.value)}
+          sx={{ flex: '2 1 420px' }}
+        />
+      </Box>
 
       <Divider />
 
