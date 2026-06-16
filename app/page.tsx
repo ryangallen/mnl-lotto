@@ -192,7 +192,8 @@ export default function Home() {
       if (parsed.teams) setTeams(parsed.teams);
       if (parsed.jugBalls) setJugBalls(parsed.jugBalls);
       if (parsed.pulledBalls) setPulledBalls(parsed.pulledBalls);
-      setMachineState(parsed.machineState ?? 'paused');
+      // always load with the machine paused/off so user must turn it on
+      setMachineState('paused');
       setLoaded(parsed.loaded ?? true);
       setLottoId(id);
     } catch {
