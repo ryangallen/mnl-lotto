@@ -51,7 +51,7 @@ const nextBallId = () => `b${++ballIdCounter}`;
 const createNBalls = (n: number, color: string) =>
   [...Array(n)].map(() => ({ id: nextBallId(), color }));
 
-const DEFAULT_BALL_COUNT = 2;
+const DEFAULT_BALL_COUNT = 3;
 const PULL_DISPLAY_MS = 1500;
 const PULL_FADE_MS = 600;
 
