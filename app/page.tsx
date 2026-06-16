@@ -59,6 +59,7 @@ const fadeInBall = keyframes`
   from { opacity: 0; }
   to { opacity: 1; }
 `;
+
 const DEFAULT_TEAMS = [
   { name: 'Golden Seals', color: '#FFE680' },
   { name: 'Nordiques', color: '#5BA8FF' },
@@ -99,6 +100,7 @@ export default function Home() {
   const [draftTitle, setDraftTitle] = useState<string>('Main Draft');
 
   const [machineState, setMachineState] = useState<MachineState>('idle');
+  const [loaded, setLoaded] = useState<boolean>(false);
   const [jugBalls, setJugBalls] = useState<Ball[]>([]);
   const [pulledBalls, setPulledBalls] = useState<Ball[]>([]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -108,6 +110,7 @@ export default function Home() {
   const fadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadTimeoutsRef = useRef<number[]>([]);
 
   useLoopingFan({
     src: '/static/fan-running.mp3',
@@ -127,6 +130,10 @@ export default function Home() {
       clearTimeout(lockTimeoutRef.current);
       lockTimeoutRef.current = null;
     }
+    if (loadTimeoutsRef.current.length) {
+      loadTimeoutsRef.current.forEach((id) => clearTimeout(id));
+      loadTimeoutsRef.current = [];
+    }
     setDisplayedBallVisible(false);
     setDisplayedBall(null);
     setPullLocked(false);
@@ -137,6 +144,10 @@ export default function Home() {
       if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current);
       if (clearTimeoutRef.current) clearTimeout(clearTimeoutRef.current);
       if (lockTimeoutRef.current) clearTimeout(lockTimeoutRef.current);
+      if (loadTimeoutsRef.current.length) {
+        loadTimeoutsRef.current.forEach((id) => clearTimeout(id));
+        loadTimeoutsRef.current = [];
+      }
     },
     [],
   );
@@ -195,6 +206,7 @@ export default function Home() {
         setMachineState('idle');
         setJugBalls([]);
         setPulledBalls([]);
+        setLoaded(false);
         clearDisplayedBall();
       }
     },
@@ -208,6 +220,7 @@ export default function Home() {
         setMachineState('idle');
         setJugBalls([]);
         setPulledBalls([]);
+        setLoaded(false);
         clearDisplayedBall();
       }
     },
@@ -223,6 +236,30 @@ export default function Home() {
     setMachineState('running');
     clearDisplayedBall();
   }, [teams, clearDisplayedBall]);
+
+  const handleLoad = useCallback(() => {
+    // Play a start sound then stagger many load-ball sounds to simulate balls loading
+    playOneShot('/static/start.mp3');
+
+    const allBalls = teams.flatMap((t) => t.balls);
+    const shuffled = [...allBalls].sort(() => Math.random() - 0.5);
+    setJugBalls(shuffled);
+    setPulledBalls([]);
+    setMachineState('paused');
+    setLoaded(true);
+    clearDisplayedBall();
+
+    // staggered load-ball sounds: at most max(num teams, balls per team)
+    const maxHits = Math.max(1, Math.max(teams.length, ballCount));
+    for (let i = 0; i < maxHits; i++) {
+      const delay = i * 120 + Math.floor(Math.random() * 80); // 120ms step with jitter
+      const id = window.setTimeout(() => {
+        // slightly reduce volume for repeated hits
+        playOneShot('/static/load-ball.mp3', 0.75);
+      }, delay);
+      loadTimeoutsRef.current.push(id);
+    }
+  }, [teams, clearDisplayedBall, totalBalls]);
 
   const handlePullBall = useCallback(() => {
     if (jugBalls.length === 0 || pullLocked) return;
@@ -266,6 +303,7 @@ export default function Home() {
     setMachineState('idle');
     setJugBalls([]);
     setPulledBalls([]);
+    setLoaded(false);
     clearDisplayedBall();
   }, [clearDisplayedBall]);
 
@@ -273,9 +311,10 @@ export default function Home() {
     machineState === 'running' && jugBalls.length > 0 && !pullLocked;
   const canReset = machineState !== 'idle' || pulledBalls.length > 0;
   const canTogglePower =
-    (machineState === 'idle' && totalBalls > 0) ||
-    machineState === 'running' ||
-    machineState === 'paused';
+    loaded &&
+    ((machineState === 'idle' && totalBalls > 0) ||
+      machineState === 'running' ||
+      machineState === 'paused');
 
   const handleTogglePower = useCallback(() => {
     if (machineState === 'idle') {
@@ -406,6 +445,31 @@ export default function Home() {
               </Box>
             ))}
           </Box>
+          {machineState === 'idle' && !loaded && (
+            <Button
+              variant='contained'
+              size='large'
+              onClick={handleLoad}
+              title='Load The Balls! This will load balls and set the machine to paused. The ON/OFF button is disabled until loaded.'
+              sx={{
+                mt: 3,
+                mx: 'auto',
+                textTransform: 'uppercase',
+                backgroundColor: '#ff8a00',
+                fontWeight: 700,
+                borderRadius: 2,
+                px: 2.5,
+                py: 1,
+                boxShadow: '0 8px 20px rgba(255,90,0,0.18)',
+                '&:hover': {
+                  backgroundColor: '#f5880c',
+                  boxShadow: '0 10px 24px rgba(255,90,0,0.18)',
+                },
+              }}
+            >
+              LOAD THE BALLS!
+            </Button>
+          )}
         </Box>
 
         <Box
