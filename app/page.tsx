@@ -434,6 +434,12 @@ export default function Home() {
     setPulledBalls([]);
     setLoaded(false);
     clearDisplayedBall();
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('lotto');
+      window.history.pushState({}, '', url.toString());
+    } catch {}
+    setLottoId(null);
   }, [clearDisplayedBall]);
 
   const canPull =
