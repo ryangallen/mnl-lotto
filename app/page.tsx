@@ -306,6 +306,13 @@ export default function Home() {
         setLoaded(false);
         clearDisplayedBall();
       }
+      // allow receipt to download again for the next run
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        // receiptDownloadedRef is defined below; safe to set at runtime
+        // @ts-ignore
+        receiptDownloadedRef.current = false;
+      } catch {}
     },
     [machineState, clearDisplayedBall],
   );
@@ -320,6 +327,11 @@ export default function Home() {
         setLoaded(false);
         clearDisplayedBall();
       }
+      try {
+        // allow receipt to download again for the next run
+        // @ts-ignore
+        receiptDownloadedRef.current = false;
+      } catch {}
     },
     [machineState, ballCount, clearDisplayedBall],
   );
@@ -335,6 +347,11 @@ export default function Home() {
     setJugBalls(shuffled);
     setPulledBalls([]);
     setMachineState('running');
+    try {
+      // reset receipt guard so a new finish will download
+      // @ts-ignore
+      receiptDownloadedRef.current = false;
+    } catch {}
     clearDisplayedBall();
   }, [teams, clearDisplayedBall, preSlots]);
 
@@ -355,6 +372,11 @@ export default function Home() {
     // create a lotto id and set it in URL/localStorage
     const id = makeLottoId(draftTitle);
     setLottoId(id);
+    try {
+      // reset receipt guard when loading a new lotto
+      // @ts-ignore
+      receiptDownloadedRef.current = false;
+    } catch {}
     clearDisplayedBall();
 
     // staggered load-ball sounds: at most max(num teams, balls per team)
@@ -374,6 +396,15 @@ export default function Home() {
     if (!lottoId) return;
     try {
       const key = `mnl-lotto:${lottoId}`;
+      const pulledBallsWithNamesAndIndex = (pulledBalls || []).map((b, idx) => {
+        const team = find(teams, (t: Team) => t.color === b.color);
+        return {
+          ...b,
+          team: team ? team.name : null,
+          pullNumber: idx + 1,
+        };
+      });
+
       const payload = {
         id: lottoId,
         draftTitle,
@@ -381,7 +412,7 @@ export default function Home() {
         teams,
         machineState,
         jugBalls,
-        pulledBalls,
+        pulledBalls: pulledBallsWithNamesAndIndex,
         loaded,
         savedAt: new Date().toISOString(),
       };
@@ -411,13 +442,22 @@ export default function Home() {
     if (machineState !== 'finished') return;
     if (receiptDownloadedRef.current) return;
     try {
+      const pulledBallsWithNames = pulledBalls.map((b, idx) => {
+        const team = find(teams, (t: Team) => t.color === b.color);
+        return {
+          ...b,
+          team: team ? team.name : null,
+          pullNumber: idx + 1,
+        };
+      });
+
       const payload = {
         id: lottoId ?? makeLottoId(draftTitle),
         draftTitle,
         ballCount,
         teams,
         jugBalls,
-        pulledBalls,
+        pulledBalls: pulledBallsWithNames,
         machineState,
         loaded,
         draftOrder: draftOrder.map((t) => (t ? t.name : null)),
