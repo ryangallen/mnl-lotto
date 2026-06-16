@@ -462,10 +462,7 @@ export default function Home() {
                 aria-pressed={machineState === 'running'}
                 tabIndex={canTogglePower ? 0 : -1}
                 onKeyDown={(e) => {
-                  if (
-                    canTogglePower &&
-                    (e.key === 'Enter' || e.key === ' ')
-                  ) {
+                  if (canTogglePower && (e.key === 'Enter' || e.key === ' ')) {
                     e.preventDefault();
                     handleTogglePower();
                   }
@@ -487,8 +484,7 @@ export default function Home() {
                   height={12}
                   borderRadius={0.5}
                   sx={{
-                    bgcolor:
-                      machineState === 'running' ? '#ff3b3b' : '#5a1a1a',
+                    bgcolor: machineState === 'running' ? '#ff3b3b' : '#5a1a1a',
                     border: '1px solid rgba(0, 0, 0, .5)',
                     boxShadow:
                       machineState === 'running'
@@ -519,8 +515,7 @@ export default function Home() {
                 display='flex'
                 alignItems='center'
                 justifyContent='center'
-              >
-              </Box>
+              ></Box>
               <Typography
                 position='absolute'
                 bottom={6}
@@ -695,7 +690,7 @@ export default function Home() {
           display='flex'
           flexDirection='column'
           gap={3}
-          width={280}
+          width={380}
           flexShrink={0}
           paddingTop={1}
         >
@@ -703,56 +698,59 @@ export default function Home() {
             <Typography variant='h6' fontWeight='bold'>
               Ball Order
             </Typography>
-            {Array.from({ length: totalBalls }).map((_, i) => {
-              const ball = pulledBalls[i];
-              const team = ball
-                ? find(teams, (t: Team) => t.color === ball.color)
-                : undefined;
-              const teamName = ball ? get(team, 'name', ball.color) : '';
-              return (
-                <Box key={i} display='flex' alignItems='center' gap={2}>
-                  <Typography
-                    width={28}
-                    textAlign='right'
-                    fontWeight='bold'
-                    color='text.secondary'
-                  >
-                    {i + 1}.
-                  </Typography>
-                  {ball ? (
-                    <Box
-                      display='flex'
-                      alignItems='center'
-                      gap={2}
-                      sx={{
-                        animation: `${fadeInBall} ${PULL_FADE_MS}ms ease both`,
-                        animationDelay: `${PULL_DISPLAY_MS}ms`,
-                      }}
+
+            <Box display='grid' gridTemplateColumns={'1fr 1fr'} gap={1}>
+              {Array.from({ length: totalBalls }).map((_, i) => {
+                const ball = pulledBalls[i];
+                const team = ball
+                  ? find(teams, (t: Team) => t.color === ball.color)
+                  : undefined;
+                const teamName = ball ? get(team, 'name', ball.color) : '';
+                return (
+                  <Box key={i} display='flex' alignItems='center' gap={2}>
+                    <Typography
+                      width={28}
+                      textAlign='right'
+                      fontWeight='bold'
+                      color='text.secondary'
                     >
+                      {i + 1}.
+                    </Typography>
+                    {ball ? (
+                      <Box
+                        display='flex'
+                        alignItems='center'
+                        gap={2}
+                        sx={{
+                          animation: `${fadeInBall} ${PULL_FADE_MS}ms ease both`,
+                          animationDelay: `${PULL_DISPLAY_MS}ms`,
+                        }}
+                      >
+                        <Box
+                          borderRadius='100%'
+                          bgcolor={ball.color}
+                          width={BALL_SIZE}
+                          height={BALL_SIZE}
+                          border='1px solid rgba(0, 0, 0, .2)'
+                          boxShadow='0 0 2px rgba(0, 0, 0, .4)'
+                          flexShrink={0}
+                        />
+                        <Typography>{teamName}</Typography>
+                      </Box>
+                    ) : (
                       <Box
                         borderRadius='100%'
-                        bgcolor={ball.color}
                         width={BALL_SIZE}
                         height={BALL_SIZE}
-                        border='1px solid rgba(0, 0, 0, .2)'
-                        boxShadow='0 0 2px rgba(0, 0, 0, .4)'
+                        border='1px dashed rgba(0, 0, 0, .25)'
+                        bgcolor='rgba(0, 0, 0, .04)'
                         flexShrink={0}
                       />
-                      <Typography>{teamName}</Typography>
-                    </Box>
-                  ) : (
-                    <Box
-                      borderRadius='100%'
-                      width={BALL_SIZE}
-                      height={BALL_SIZE}
-                      border='1px dashed rgba(0, 0, 0, .25)'
-                      bgcolor='rgba(0, 0, 0, .04)'
-                      flexShrink={0}
-                    />
-                  )}
-                </Box>
-              );
-            })}
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
           </Box>
 
           <Box display='flex' flexDirection='column' gap={1}>
