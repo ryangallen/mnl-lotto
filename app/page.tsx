@@ -101,6 +101,7 @@ export default function Home() {
 
   const [machineState, setMachineState] = useState<MachineState>('idle');
   const [loaded, setLoaded] = useState<boolean>(false);
+  const [lottoId, setLottoId] = useState<string | null>(null);
   const [jugBalls, setJugBalls] = useState<Ball[]>([]);
   const [pulledBalls, setPulledBalls] = useState<Ball[]>([]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -156,6 +157,48 @@ export default function Home() {
     () => teams.reduce((sum, t) => sum + t.balls.length, 0),
     [teams],
   );
+
+  const formatTimestamp = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+      d.getDate(),
+    )}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+  };
+
+  const makeLottoId = (title: string) => {
+    const clean = title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-');
+    return `${clean || 'draft'}-${formatTimestamp()}`;
+  };
+
+  // load lottery from URL/localStorage on mount
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('lotto');
+      if (!id) return;
+      const key = `mnl-lotto:${id}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed) return;
+      // restore state
+      setDraftTitle(parsed.draftTitle ?? 'Main Draft');
+      setBallCount(parsed.ballCount ?? DEFAULT_BALL_COUNT);
+      if (parsed.teams) setTeams(parsed.teams);
+      if (parsed.jugBalls) setJugBalls(parsed.jugBalls);
+      if (parsed.pulledBalls) setPulledBalls(parsed.pulledBalls);
+      setMachineState(parsed.machineState ?? 'paused');
+      setLoaded(parsed.loaded ?? true);
+      setLottoId(id);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const draftOrder = useMemo<(Team | null)[]>(() => {
     const slots: (Team | null)[] = teams.map(() => null);
@@ -247,6 +290,9 @@ export default function Home() {
     setPulledBalls([]);
     setMachineState('paused');
     setLoaded(true);
+    // create a lotto id and set it in URL/localStorage
+    const id = makeLottoId(draftTitle);
+    setLottoId(id);
     clearDisplayedBall();
 
     // staggered load-ball sounds: at most max(num teams, balls per team)
@@ -259,7 +305,41 @@ export default function Home() {
       }, delay);
       loadTimeoutsRef.current.push(id);
     }
-  }, [teams, clearDisplayedBall, totalBalls]);
+  }, [teams, clearDisplayedBall, totalBalls, draftTitle, ballCount]);
+
+  // auto-save lottery state when lottoId exists and relevant state changes
+  useEffect(() => {
+    if (!lottoId) return;
+    try {
+      const key = `mnl-lotto:${lottoId}`;
+      const payload = {
+        id: lottoId,
+        draftTitle,
+        ballCount,
+        teams,
+        machineState,
+        jugBalls,
+        pulledBalls,
+        loaded,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(key, JSON.stringify(payload));
+      const url = new URL(window.location.href);
+      url.searchParams.set('lotto', lottoId);
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // ignore
+    }
+  }, [
+    lottoId,
+    draftTitle,
+    ballCount,
+    teams,
+    machineState,
+    jugBalls,
+    pulledBalls,
+    loaded,
+  ]);
 
   const handlePullBall = useCallback(() => {
     if (jugBalls.length === 0 || pullLocked) return;
